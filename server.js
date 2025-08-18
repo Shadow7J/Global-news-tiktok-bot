@@ -1,4 +1,3 @@
-javascript
 const express = require('express');
 const cron = require('node-cron');
 const { runNewsAutomation } = require('./news-automation');
