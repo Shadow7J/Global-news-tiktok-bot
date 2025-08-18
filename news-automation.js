@@ -1,4 +1,3 @@
-javascript
 const axios = require('axios');
 const Parser = require('rss-parser');
 const { postToTikTok } = require('./tiktok-poster');
