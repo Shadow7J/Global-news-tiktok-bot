@@ -1,4 +1,3 @@
-dockerfile
 FROM node:18-alpine
 
 # Install system dependencies
