@@ -39,7 +39,31 @@ app.post('/trigger', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+javascript
+// Test endpoint to check if news fetching works
+app.get('/test', async (req, res) => {
+  try {
+    const axios = require('axios');
 
+    // Test news fetching
+    const response = await axios.get('https://newsapi.org/v2/top-headlines', {
+      params: {
+        country: 'us',
+        category: 'general',
+        pageSize: 3
+      },
+      headers: { 'X-API-Key': process.env.NEWSAPI_KEY }
+    });
+
+    res.json({
+      success: true,
+      articlesFound: response.data.articles.length,
+      sampleTitle: response.data.articles[0]?.title || 'No articles'
+    });
+  } catch (error) {
+    res.json({ success: false, error: error.message });
+  }
+});
 app.listen(PORT, () => {
   console.log(`🚀 Global News TikTok Bot running on port ${PORT}`);
   console.log('🤖 Automation runs every 2 hours');
