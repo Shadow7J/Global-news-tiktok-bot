@@ -39,7 +39,6 @@ app.post('/trigger', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-javascript
 // Test endpoint to check if news fetching works
 app.get('/test', async (req, res) => {
   try {
