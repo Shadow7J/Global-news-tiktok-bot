@@ -185,7 +185,21 @@ async function runFullGlobalNewsAutomation() {
     topStories.forEach((story, i) => {
       console.log(`${i+1}. [${story.region.toUpperCase()}] ${story.title.substring(0, 60)}... (Score: ${story.viralScore})`);
     });
+// After generating each script, add:
+if (!global.latestScripts) global.latestScripts = [];
+global.latestScripts.push({
+  title: story.title,
+  script: script,
+  hashtags: hashtags,
+  region: story.region,
+  viralScore: story.viralScore,
+  generatedAt: new Date().toISOString()
+});
 
+// Keep only last 10 scripts
+if (global.latestScripts.length > 10) {
+  global.latestScripts = global.latestScripts.slice(-10);
+}
     // GENERATE SCRIPTS FOR ALL SELECTED STORIES
     for (let i = 0; i < topStories.length; i++) {
       const story = topStories[i];
@@ -205,7 +219,19 @@ async function runFullGlobalNewsAutomation() {
         console.log(`Hashtags: ${hashtags}`);
         console.log(`Viral Score: ${story.viralScore}`);
         console.log('-------------------');
-
+        
+// Add delay between API calls to avoid rate limits
+await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+        
+        // Add this new endpoint
+app.get('/latest-content', (req, res) => {
+  res.json({
+    message: 'Latest generated content ready for TikTok',
+    status: 'Content generation working perfectly',
+    nextStep: 'Add TikTok posting automation',
+    sampleContent: global.latestScripts || []
+  });
+});
         // TODO: Here you would create video and post to TikTok
 
       } catch (error) {
