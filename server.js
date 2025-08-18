@@ -200,25 +200,48 @@ global.latestScripts.push({
 if (global.latestScripts.length > 10) {
   global.latestScripts = global.latestScripts.slice(-10);
 }
-    // GENERATE SCRIPTS FOR ALL SELECTED STORIES
-    for (let i = 0; i < topStories.length; i++) {
-      const story = topStories[i];
+    // GENERATE SCRIPTS AND SIMULATE TIKTOK POSTING
+for (let i = 0; i < topStories.length; i++) {
+  const story = topStories[i];
 
-      try {
-        console.log(`📝 Generating script ${i+1}: ${story.title.substring(0, 50)}...`);
+  try {
+    console.log(`📝 Processing story ${i+1}/${topStories.length}: ${story.title.substring(0, 50)}...`);
 
-        const script = await generateViralScript(story);
-        const hashtags = generateHashtags(story);
+    const script = await generateViralScript(story);
+    const hashtags = generateHashtags(story);
 
-        console.log(`✅ Generated script ${i+1}:`);
-        console.log(`Region: ${story.region}`);
-        console.log(`Country: ${story.country}`);
-        console.log(`Source: ${story.source}`);
-        console.log(`Title: ${story.title}`);
-        console.log(`Script: ${script.substring(0, 100)}...`);
-        console.log(`Hashtags: ${hashtags}`);
-        console.log(`Viral Score: ${story.viralScore}`);
-        console.log('-------------------');
+    // Simulate TikTok posting
+    const postResult = await simulateTikTokPosting(story, script, hashtags);
+
+    // Save to global for API access
+    if (!global.latestPosts) global.latestPosts = [];
+    global.latestPosts.push({
+      ...postResult.content,
+      viralScore: story.viralScore,
+      estimatedViews: postResult.estimated_views,
+      region: story.region,
+      source: story.source,
+      simulatedAt: postResult.posted_at
+    });
+
+    // Keep only last 20 posts
+    if (global.latestPosts.length > 20) {
+      global.latestPosts = global.latestPosts.slice(-20);
+    }
+
+    console.log(`✅ TikTok post ${i+1} simulated successfully!`);
+
+    // Wait between posts to avoid spam simulation
+    if (i < topStories.length - 1) {
+      console.log('⏱️ Waiting 30 seconds before next post simulation...');
+      await new Promise(resolve => setTimeout(resolve, 30000));
+    }
+
+  } catch (error) {
+    console.error(`❌ Failed to process story ${i+1}:`, error.message);
+    continue;
+  }
+}
         
 // Add delay between API calls to avoid rate limits
 await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
@@ -231,6 +254,44 @@ app.get('/latest-content', (req, res) => {
     nextStep: 'Add TikTok posting automation',
     sampleContent: global.latestScripts || []
   });
+});
+    // View latest simulated TikTok posts
+app.get('/simulated-posts', (req, res) => {
+  const posts = global.latestPosts || [];
+
+  res.json({
+    success: true,
+    totalPosts: posts.length,
+    lastUpdated: global.lastRun,
+    posts: posts.map(post => ({
+      title: post.title,
+      caption: post.caption.substring(0, 100) + '...',
+      hashtags: post.hashtags,
+      viralScore: post.viralScore,
+      estimatedViews: post.estimatedViews,
+      region: post.region,
+      source: post.source,
+      simulatedAt: post.simulatedAt
+    }))
+  });
+});
+
+// Get full details of a specific post
+app.get('/post/:index', (req, res) => {
+  const posts = global.latestPosts || [];
+  const index = parseInt(req.params.index);
+
+  if (index >= 0 && index < posts.length) {
+    res.json({
+      success: true,
+      post: posts[index]
+    });
+  } else {
+    res.json({
+      success: false,
+      error: 'Post not found'
+    });
+  }
 });
         // TODO: Here you would create video and post to TikTok
 
@@ -457,3 +518,84 @@ app.listen(PORT, () => {
     console.log('⚠️  Missing API keys');
   }
 });
+// TikTok Posting Simulation
+async function simulateTikTokPosting(story, script, hashtags) {
+  console.log('📱 ========== TIKTOK POST SIMULATION ==========');
+  console.log('🎬 VIDEO CONTENT:');
+  console.log(`Title: ${story.title}`);
+  console.log(`Region: ${story.region.toUpperCase()}`);
+  console.log(`Source: ${story.source}`);
+  console.log(`Country: ${story.country.toUpperCase()}`);
+  console.log('');
+
+  console.log('📝 CAPTION:');
+  console.log(script);
+  console.log('');
+
+  console.log('🏷️ HASHTAGS:');
+  console.log(hashtags);
+  console.log('');
+
+  console.log('📊 ENGAGEMENT METRICS:');
+  console.log(`Viral Score: ${story.viralScore}/100`);
+  console.log(`Expected Views: ${estimateViews(story.viralScore)}`);
+  console.log(`Best Posting Time: ${getBestPostingTime(story.region)}`);
+  console.log('');
+
+  console.log('🎥 VIDEO DETAILS:');
+  console.log(`Duration: 60 seconds`);
+  console.log(`Style: Breaking news format`);
+  console.log(`Background: ${getVideoStyle(story.region)}`);
+  console.log(`Voice: AI news anchor`);
+  console.log('');
+
+  console.log('✅ READY TO POST TO TIKTOK!');
+  console.log('==========================================');
+  console.log('');
+
+  return {
+    success: true,
+    platform: 'TikTok',
+    posted_at: new Date().toISOString(),
+    estimated_views: estimateViews(story.viralScore),
+    content: {
+      title: story.title,
+      caption: script,
+      hashtags: hashtags,
+      duration: 60,
+      style: getVideoStyle(story.region)
+    }
+  };
+}
+
+// Helper functions for simulation
+function estimateViews(viralScore) {
+  if (viralScore >= 80) return '100K - 1M views';
+  if (viralScore >= 60) return '10K - 100K views';
+  if (viralScore >= 40) return '1K - 10K views';
+  return '100 - 1K views';
+}
+
+function getBestPostingTime(region) {
+  const times = {
+    'americas': '6PM - 9PM EST',
+    'europe': '7PM - 10PM CET',
+    'asia': '8PM - 11PM JST',
+    'middle_east': '8PM - 11PM GST',
+    'africa': '7PM - 10PM CAT',
+    'international': '6PM - 9PM EST'
+  };
+  return times[region] || times['international'];
+}
+
+function getVideoStyle(region) {
+  const styles = {
+    'middle_east': 'Red urgent background with Arabic/English text',
+    'americas': 'Blue professional with US-style graphics',
+    'europe': 'Clean modern with European flags',
+    'asia': 'High-tech with Asian market focus',
+    'africa': 'Vibrant with continental themes',
+    'international': 'Global news format with world map'
+  };
+  return styles[region] || styles['international'];
+}
