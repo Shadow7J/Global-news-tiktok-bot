@@ -18,7 +18,7 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files first
 COPY package*.json ./
 
 # Install dependencies
