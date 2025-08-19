@@ -11,13 +11,10 @@ const parser = new Parser();
 const NEWSAPI_KEY = process.env.NEWSAPI_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-// FULL GLOBAL COVERAGE - ALL COUNTRIES + MIDDLE EAST
-const countries = ['us', 'gb', 'ca', 'au', 'in', 'de', 'fr', 'jp', 'br', 'mx', 'sa', 'ae', 'eg', 'tr', 'il'];
+// COUNTRIES & SOURCES
+const countries = ['us', 'gb', 'ca', 'au', 'in', 'de', 'fr', 'jp', 'br', 'mx', 'sa', 'ae', 'eg'];
 
 const rssSources = {
-  'Reuters': 'http://feeds.reuters.com/reuters/topNews',
-  'AP News': 'https://feeds.apnews.com/rss/apf-topnews',
-  'Al Arabiya': 'https://english.alarabiya.net/rss.xml',
   'Al Jazeera': 'https://www.aljazeera.com/xml/rss/all.xml',
   'DW News': 'https://rss.dw.com/rdf/rss-en-all',
   'France24': 'https://www.france24.com/en/rss'
@@ -25,65 +22,64 @@ const rssSources = {
 
 app.use(express.json());
 
-// HELPER FUNCTIONS FIRST
-// Helper functions for simulation
-function estimateViews(viralScore) {
-  if (viralScore >= 80) return '100K - 1M views';
-  if (viralScore >= 60) return '10K - 100K views';
-  if (viralScore >= 40) return '1K - 10K views';
-  return '100 - 1K views';
-}
-
-function getBestPostingTime(region) {
-  const times = {
-    'americas': '6PM - 9PM EST',
-    'europe': '7PM - 10PM CET',
-    'asia': '8PM - 11PM JST',
-    'middle_east': '8PM - 11PM GST',
-    'africa': '7PM - 10PM CAT',
-    'international': '6PM - 9PM EST'
-  };
-  return times[region] || times['international'];
-}
-
-function getVideoStyle(region) {
-  const styles = {
-    'middle_east': 'Red urgent background with Arabic/English text',
-    'americas': 'Blue professional with US-style graphics',
-    'europe': 'Clean modern with European flags',
-    'asia': 'High-tech with Asian market focus',
-    'africa': 'Vibrant with continental themes',
-    'international': 'Global news format with world map'
-  };
-  return styles[region] || styles['international'];
-}
-
-// MAIN AUTOMATION FUNCTION
-async function runFullGlobalNewsAutomation() {
+// SIMPLE AUTOMATION FUNCTION
+async function runNewsAutomation() {
   try {
-    console.log('🌍 Fetching FULL GLOBAL news...');
-    console.log(`📊 Covering ${countries.length} countries + ${Object.keys(rssSources).length} RSS sources`);
+    console.log('🌍 Starting global news automation...');
 
     const allNews = [];
 
-    // FETCH FROM ALL COUNTRIES
-    const selectedCountries = getRandomCountries(8);
+    // Get random countries (3 per cycle)
+    const shuffled = [...countries].sort(() => 0.5 - Math.random());
+    const selectedCountries = shuffled.slice(0, 3);
 
+    // Fetch from countries
+    for (const country of selectedCountries) {
+      try {
+        console.log(`🏴 Fetching from ${country.toUpperCase()}...`);
+
+        const response = await axios.get('https://newsapi.org/v2/top-headlines', {
+          params: {
+            country: country,
+            pageSize: 3
+          },
+          headers: { 'X-API-Key': NEWSAPI_KEY }
+        });
+
+        if (response.data.articles) {
+          response.data.articles.forEach(article => {
+            if (article.title && article.description) {
+              allNews.push({
+                title: article.title,
+                description: article.description,
+                source: article.source.name,
+                country: country,
+                region: getRegion(country),
+                publishedAt: article.publishedAt
+              });
+            }
+          });
+        }
+      } catch (error) {
+        console.error(`❌ Error fetching from ${country}:`, error.message);
+      }
+    }
+
+    // Fetch from RSS
     for (const [sourceName, url] of Object.entries(rssSources)) {
       try {
         console.log(`📡 Fetching from ${sourceName}...`);
         const feed = await parser.parseURL(url);
 
-        feed.items.slice(0, 4).forEach(item => {
-          if (item.title && item.contentSnippet && item.title.length > 20) {
+        feed.items.slice(0, 3).forEach(item => {
+          if (item.title && item.contentSnippet) {
             allNews.push({
               title: item.title,
               description: item.contentSnippet.substring(0, 200),
-              country: getSourceCountry(sourceName),
               source: sourceName,
-              publishedAt: item.pubDate || item.isoDate,
-              region: getSourceRegion(sourceName),
-              type: 'rss'
+              country: 'global',
+              region: 'middle_east',
+              publishedAt: item.pubDate
             });
           }
         });
@@ -92,194 +88,152 @@ async function runFullGlobalNewsAutomation() {
       }
     }
 
-    console.log(`📰 Found ${allNews.length} total news stories`);
+    console.log(`📰 Found ${allNews.length} news stories`);
 
-    // SCORE AND SELECT DIVERSE STORIES
-    const scoredNews = allNews.map(story => ({
-      ...story,
-      viralScore: calculateViralScore(story)
-    })).sort((a, b) => b.viralScore - a.viralScore);
+    // Process top 3 stories
+    const topStories = allNews.slice(0, 3);
 
-    const topStories = selectDiverseStories(scoredNews, 4);
-
-    console.log('🔥 Selected stories:');
-    topStories.forEach((story, i) => {
-      console.log(`${i+1}. [${story.region.toUpperCase()}] ${story.title.substring(0, 60)}... (Score: ${story.viralScore})`);
-    });
-
-    // GENERATE SCRIPTS AND SIMULATE TIKTOK POSTING
     for (let i = 0; i < topStories.length; i++) {
       const story = topStories[i];
 
       try {
-        console.log(`📝 Processing story ${i+1}/${topStories.length}: ${story.title.substring(0, 50)}...`);
+        console.log(`📝 Processing story ${i+1}: ${story.title.substring(0, 50)}...`);
 
-        const script = await generateViralScript(story);
+        const script = await generateScript(story);
         const hashtags = generateHashtags(story);
 
-        // Simulate TikTok posting
-        const postResult = await simulateTikTokPosting(story, script, hashtags);
+        // Simulate TikTok post
+        simulateTikTokPost(story, script, hashtags);
 
-        // Save to global for API access
+        // Save globally
         if (!global.latestPosts) global.latestPosts = [];
         global.latestPosts.push({
-          ...postResult.content,
-          viralScore: story.viralScore,
-          estimatedViews: postResult.estimated_views,
+          title: story.title,
+          script: script,
+          hashtags: hashtags,
           region: story.region,
           source: story.source,
-          simulatedAt: postResult.posted_at
+          createdAt: new Date().toISOString()
         });
 
-        // Keep only last 20 posts
-        if (global.latestPosts.length > 20) {
-          global.latestPosts = global.latestPosts.slice(-20);
+        // Keep only last 10
+        if (global.latestPosts.length > 10) {
+          global.latestPosts = global.latestPosts.slice(-10);
         }
-
-        console.log(`✅ TikTok post ${i+1} simulated successfully!`);
-
-        // Add delay between API calls
-        await new Promise(resolve => setTimeout(resolve, 2000));
 
       } catch (error) {
         console.error(`❌ Failed to process story ${i+1}:`, error.message);
-        continue;
       }
     }
 
     global.lastRun = new Date().toISOString();
-    console.log('🎉 FULL GLOBAL news automation cycle completed!');
+    console.log('✅ News automation completed!');
 
   } catch (error) {
-    console.error('💥 Critical error in news automation:', error);
+    console.error('💥 Error in automation:', error);
   }
 }
 
-// API ENDPOINTS
+// Helper functions
+function getRegion(country) {
+  if (['us', 'ca', 'br', 'mx'].includes(country)) return 'americas';
+  if (['gb', 'de', 'fr'].includes(country)) return 'europe';
+  if (['jp', 'in', 'au'].includes(country)) return 'asia';
+  if (['sa', 'ae', 'eg'].includes(country)) return 'middle_east';
+  return 'international';
+}
+
+function generateHashtags(story) {
+  const base = '#worldnews #global #breaking #fyp #viral #trending';
+
+  const regionTags = {
+    'americas': '#Americas',
+    'europe': '#Europe',
+    'asia': '#Asia',
+    'middle_east': '#MiddleEast'
+  };
+
+  return base + (regionTags[story.region] || '');
+}
+
+async function generateScript(story) {
+  try {
+    const prompt = `Create a viral TikTok script for: ${story.title}
+
+Keep it under 150 words, start with a hook, explain why it matters globally, end with a question.`;
+
+    const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+      messages: [{ role: 'user', content: prompt }],
+      model: 'mixtral-8x7b-32768',
+      max_tokens: 300
+    }, {
+      headers: {
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    return response.data.choices[0].message.content;
+
+  } catch (error) {
+    return `🚨 BREAKING: ${story.title}
+
+${story.description.substring(0, 100)}...
+
+This affects millions worldwide. What do you think? 👇`;
+  }
+}
+
+function simulateTikTokPost(story, script, hashtags) {
+  console.log('📱 ========== TIKTOK SIMULATION ==========');
+  console.log(`📰 Title: ${story.title}`);
+  console.log(`🌍 Region: ${story.region}`);
+  console.log(`📝 Script: ${script.substring(0, 100)}...`);
+  console.log(`🏷️ Hashtags: ${hashtags}`);
+  console.log('✅ Ready to post to TikTok!');
+  console.log('==========================================');
+}
+
+// API Routes
 app.get('/', (req, res) => {
   res.json({
-    status: 'Global News Bot Running - FULL COVERAGE WITH SIMULATION',
+    status: 'Global News TikTok Bot - WORKING',
+    lastRun: global.lastRun || 'Not run yet',
     countries: countries.length,
     rssSources: Object.keys(rssSources).length,
-    totalSources: countries.length + Object.keys(rssSources).length,
-    lastRun: global.lastRun || 'Not run yet',
-    nextRun: 'Every 2 hours',
-    coverage: 'Americas, Europe, Asia, Middle East, Africa',
-    simulation: 'TikTok posting simulation active'
+    postsGenerated: global.latestPosts ? global.latestPosts.length : 0
   });
 });
 
-app.get('/test', async (req, res) => {
-  try {
-    console.log('Testing FULL global news fetch...');
-
-    let totalArticles = 0;
-    const sampleTitles = [];
-
-    // Test NewsAPI with multiple countries
-    for (let i = 0; i < Math.min(3, countries.length); i++) {
-      const country = countries[i];
-      try {
-        const response = await axios.get('https://newsapi.org/v2/top-headlines', {
-          params: {
-            country: country,
-            category: 'general',
-            pageSize: 3
-          },
-          headers: { 'X-API-Key': NEWSAPI_KEY }
-        });
-
-        totalArticles += response.data.articles.length;
-        if (response.data.articles[0]) {
-          sampleTitles.push(`${country.toUpperCase()}: ${response.data.articles[0].title}`);
-        }
-      } catch (error) {
-        console.error(`Error testing ${country}:`, error.message);
-      }
-    }
-
-    res.json({
-      success: true,
-      totalCountries: countries.length,
-      totalRSSSources: Object.keys(rssSources).length,
-      articlesFound: totalArticles,
-      sampleTitles: sampleTitles,
-      message: 'FULL GLOBAL coverage working!',
-      sources: {
-        countries: countries,
-        rss: Object.keys(rssSources)
-      }
-    });
-  } catch (error) {
-    res.json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-app.get('/simulated-posts', (req, res) => {
-  const posts = global.latestPosts || [];
-
+app.get('/posts', (req, res) => {
   res.json({
     success: true,
-    totalPosts: posts.length,
-    lastUpdated: global.lastRun,
-    posts: posts.map(post => ({
-      title: post.title,
-      caption: post.caption.substring(0, 100) + '...',
-      hashtags: post.hashtags,
-      viralScore: post.viralScore,
-      estimatedViews: post.estimatedViews,
-      region: post.region,
-      source: post.source,
-      simulatedAt: post.simulatedAt
-    }))
+    posts: global.latestPosts || [],
+    total: global.latestPosts ? global.latestPosts.length : 0
   });
-});
-
-app.get('/post/:index', (req, res) => {
-  const posts = global.latestPosts || [];
-  const index = parseInt(req.params.index);
-
-  if (index >= 0 && index < posts.length) {
-    res.json({
-      success: true,
-      post: posts[index]
-    });
-  } else {
-    res.json({
-      success: false,
-      error: 'Post not found'
-    });
-  }
 });
 
 app.post('/trigger', async (req, res) => {
   try {
-    console.log('🔥 Manual trigger initiated...');
-    await runFullGlobalNewsAutomation();
-    res.json({ success: true, message: 'FULL GLOBAL news cycle completed with TikTok simulation' });
+    await runNewsAutomation();
+    res.json({ success: true, message: 'News cycle completed!' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // Run every 2 hours
-cron.schedule('0 */2 * * *', runFullGlobalNewsAutomation);
+cron.schedule('0 */2 * * *', runNewsAutomation);
 
 app.listen(PORT, () => {
-  console.log(`🚀 FULL GLOBAL News Bot with TikTok Simulation running on port ${PORT}`);
-  console.log(`🌍 Coverage: ${countries.length} countries + ${Object.keys(rssSources).length} RSS sources`);
-  console.log('🤖 Automation runs every 2 hours');
-  console.log('📱 TikTok simulation: Full posting preview');
-  console.log('📰 Sources: Americas, Europe, Asia, Middle East, Africa');
+  console.log(`🚀 Global News Bot running on port ${PORT}`);
+  console.log(`🌍 Countries: ${countries.length}, RSS: ${Object.keys(rssSources).length}`);
 
-  // Test on startup
+  // Run test on startup
   if (NEWSAPI_KEY && GROQ_API_KEY) {
-    console.log('🔑 API keys detected, running full test...');
-    setTimeout(() => runFullGlobalNewsAutomation(), 10000);
+    console.log('🔑 API keys found, starting automation in 5 seconds...');
+    setTimeout(runNewsAutomation, 5000);
   } else {
-    console.log('⚠️  Missing API keys');
+    console.log('⚠️  Add NEWSAPI_KEY and GROQ_API_KEY to environment variables');
   }
 });
