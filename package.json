@@ -1,26 +1,19 @@
 {
   "name": "global-news-tiktok-bot",
   "version": "1.0.0",
-  "description": "Global news TikTok automation bot with real posting",
+  "description": "Global news TikTok automation bot",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
-    "test": "node server.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "4.18.2",
     "axios": "1.4.0",
     "node-cron": "3.0.2",
     "rss-parser": "3.13.0",
-    "playwright": "1.40.0",
-    "fluent-ffmpeg": "2.1.2",
-    "uuid": "9.0.0"
+    "playwright": "1.40.0"
   },
   "engines": {
     "node": "18.x"
-  },
-  "keywords": ["tiktok", "news", "automation", "global", "ai"],
-  "author": "NewsBot",
-  "license": "MIT"
+  }
 }
