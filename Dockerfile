@@ -1,27 +1,35 @@
 FROM node:18-alpine
 
-# Install system dependencies
+# Install system dependencies for Chromium + Playwright
 RUN apk add --no-cache \
     chromium \
+    chromium-chromedriver \
     nss \
     freetype \
-    freetype-dev \
     harfbuzz \
     ca-certificates \
     ttf-freefont \
-    ffmpeg
+    ffmpeg \
+    git \
+    bash \
+    wget \
+    curl \
+    build-base \
+    python3 \
+    py3-pip
 
-# Tell Playwright to use installed Chromium
+# Tell Playwright to skip its own Chromium download
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 WORKDIR /app
 
 # Copy package files first
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies safely
+RUN npm install --legacy-peer-deps
+
 
 # Copy application files
 COPY . .
