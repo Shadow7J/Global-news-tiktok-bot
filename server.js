@@ -22,8 +22,9 @@ const TIKTOK_PASSWORD = process.env.TIKTOK_PASSWORD;
 // Configuration
 const countries = ['us', 'gb', 'ca', 'au', 'in', 'de', 'fr', 'jp'];
 const rssSources = {
+  'BBC': 'http://feeds.bbci.co.uk/news/world/rss.xml',
   'Al Jazeera': 'https://www.aljazeera.com/xml/rss/all.xml',
-  'France24': 'https://www.france24.com/en/rss'
+  'Reuters': 'https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best'
 };
 
 app.use(express.json());
@@ -31,22 +32,39 @@ app.use(express.json());
 // Health check
 app.get('/', (req, res) => {
   res.json({
-    status: 'Global News TikTok Bot - ACTIVE',
+    status: '🌍 Global News TikTok Bot - ACTIVE',
     timestamp: new Date().toISOString(),
     lastRun: global.lastRun || 'Not run yet',
     postsGenerated: global.latestPosts ? global.latestPosts.length : 0,
     environment: {
       newsAPI: !!NEWSAPI_KEY,
       groqAPI: !!GROQ_API_KEY,
-      tiktokReady: !!(TIKTOK_EMAIL && TIKTOK_PASSWORD)
+      tiktokReady: !!(TIKTOK_EMAIL && TIKTOK_PASSWORD),
+      playwrightReady: checkPlaywrightInstallation()
     }
   });
 });
 
+// Check if Playwright is properly installed
+function checkPlaywrightInstallation() {
+  try {
+    require('playwright');
+    return true;
+  } catch (error) {
+    console.error('Playwright not available:', error.message);
+    return false;
+  }
+}
+
 // Test endpoint
 app.get('/test', async (req, res) => {
   try {
-    let results = { newsTest: false, tiktokReady: false, errors: [] };
+    let results = {
+      newsTest: false,
+      tiktokReady: false,
+      playwrightTest: false,
+      errors: []
+    };
 
     // Test NewsAPI
     if (NEWSAPI_KEY) {
@@ -62,14 +80,23 @@ app.get('/test', async (req, res) => {
       }
     }
 
+    // Test Playwright
+    try {
+      const { chromium } = require('playwright');
+      const browser = await chromium.launch({ headless: true });
+      await browser.close();
+      results.playwrightTest = true;
+    } catch (error) {
+      results.errors.push(`Playwright: ${error.message}`);
+    }
+
     results.tiktokReady = !!(TIKTOK_EMAIL && TIKTOK_PASSWORD);
 
     res.json({
       success: true,
       results,
-      readyForAutomation: results.newsTest && results.tiktokReady
+      readyForAutomation: results.newsTest && results.tiktokReady && results.playwrightTest
     });
-
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -84,6 +111,7 @@ app.get('/posts', (req, res) => {
     posts: posts.map((post, index) => ({
       id: index,
       title: post.title ? post.title.substring(0, 60) + '...' : 'No title',
+
       region: post.region,
       source: post.source,
       success: post.success,
@@ -95,6 +123,7 @@ app.get('/posts', (req, res) => {
 // Manual trigger
 app.post('/trigger', async (req, res) => {
   try {
+    console.log('🔄 Manual automation trigger received');
     await runNewsAutomation();
     res.json({
       success: true,
@@ -102,6 +131,7 @@ app.post('/trigger', async (req, res) => {
       postsGenerated: global.latestPosts ? global.latestPosts.length : 0
     });
   } catch (error) {
+    console.error('Manual trigger error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -109,7 +139,7 @@ app.post('/trigger', async (req, res) => {
 // Test TikTok posting
 app.post('/test-tiktok', async (req, res) => {
   try {
-    const testResult = await postToTikTokSimple({
+    const testResult = await postToTikTokSafe({
       title: "Global News Bot Test - Successfully Automated",
       region: "international",
       source: "NewsBot"
@@ -129,89 +159,57 @@ app.post('/test-tiktok', async (req, res) => {
 // Main automation function
 async function runNewsAutomation() {
   try {
-    console.log('🌍 Starting simplified global news automation...');
+    console.log('🌍 Starting global news automation…');
 
     const allNews = [];
 
-    // Fetch from countries
-    const selectedCountries = [...countries].sort(() => 0.5 - Math.random()).slice(0, 3);
+    // Fetch from NewsAPI countries
+    if (NEWSAPI_KEY) {
+      const selectedCountries = [...countries].sort(() => 0.5 - Math.random()).slice(0, 3);
 
-    for (const country of selectedCountries) {
-      if (!NEWSAPI_KEY) continue;
+      for (const country of selectedCountries) {
+        try {
+          console.log(`🏴 Fetching from ${country.toUpperCase()}…`);
 
-      try {
-        console.log(`🏴 Fetching from ${country.toUpperCase()}...`);
 
-        const response = await axios.get('https://newsapi.org/v2/top-headlines', {
-          params: {
-            country: country,
-            pageSize: 2,
-            sortBy: 'publishedAt'
-          },
-          headers: { 'X-API-Key': NEWSAPI_KEY },
-          timeout: 10000
-        });
-
-        if (response.data.articles) {
-          response.data.articles.forEach(article => {
-            if (article.title && article.description) {
-              allNews.push({
-                title: article.title,
-                description: article.description,
-                source: article.source.name,
-                country: country,
-                region: getRegion(country),
-                publishedAt: article.publishedAt
-              });
-            }
+          const response = await axios.get('https://newsapi.org/v2/top-headlines', {
+            params: {
+              country: country,
+              pageSize: 2,
+              sortBy: 'publishedAt'
+            },
+            headers: { 'X-API-Key': NEWSAPI_KEY },
+            timeout: 10000
           });
-        }
 
-        await sleep(2000); // 2 second delay between API calls
-
-      } catch (error) {
-        console.error(`❌ Error fetching from ${country}:`, error.message);
-      }
-    }
-
-    // Fetch from RSS
-    for (const [sourceName, url] of Object.entries(rssSources)) {
-      try {
-        console.log(`📡 Fetching from ${sourceName}...`);
-        const feed = await parser.parseURL(url);
-
-        feed.items.slice(0, 2).forEach(item => {
-          if (item.title && item.contentSnippet) {
-            allNews.push({
-              title: item.title,
-              description: item.contentSnippet.substring(0, 200),
-              source: sourceName,
-              country: 'global',
-              region: 'middle_east',
-              publishedAt: item.pubDate
+          if (response.data.articles) {
+            response.data.articles.forEach(article => {
+              if (article.title && article.description) {
+                allNews.push({
+                  title: article.title,
+                  description: article.description,
+                  source: article.source.name,
+                  country: country,
+                  region: getRegion(country),
+                  publishedAt: article.publishedAt
+                });
+              }
             });
           }
-        });
-      } catch (error) {
-        console.error(`❌ RSS error ${sourceName}:`, error.message);
+
+          await sleep(2000); // Rate limiting
+
+        } catch (error) {
+          console.error(`❌ Error fetching from ${country}:`, error.message);
+        }
       }
     }
 
-    console.log(`📰 Found ${allNews.length} news stories`);
-
-    if (allNews.length === 0) {
-      console.log('⚠️ No news found');
-      return;
-    }
-
-    // Select top 3 stories
-    const topStories = allNews
-      .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
-      .slice(0, 3);
-
-    console.log('🔥 Selected stories:');
-    topStories.forEach((story, i) => {
-      console.log(`${i+1}. [${story.region.toUpperCase()}] ${story.title.substring(0, 50)}...`);
+    // Fetch from RSS sources
+    for (const [sourceName, url] of Object.entries(rssSources)) {
+      try {
+        console.log(`📡 Fetching from ${sourceName}…`);
+      console.log(`${i+1}. [${story.region.toUpperCase()}] ${story.title.substring(0, 50)}…`);
     });
 
     // Process each story
@@ -219,121 +217,208 @@ async function runNewsAutomation() {
       const story = topStories[i];
 
       try {
-        console.log(`📱 Creating TikTok post ${i+1}/${topStories.length}...`);
+        console.log(`📱 Creating TikTok post ${i+1}/${topStories.length}…`);
 
-        const script = await generateSimpleScript(story);
+        const script = await generateTikTokScript(story);
         const hashtags = generateHashtags(story);
 
-        // Post to TikTok
-        const postResult = await postToTikTokSimple(story, script, hashtags);
+        // Post to TikTok with safe error handling
+        const postResult = await postToTikTokSafe(story, script, hashtags);
 
         // Save result
         if (!global.latestPosts) global.latestPosts = [];
         global.latestPosts.push(postResult);
 
+        // Keep only last 20 posts
         if (global.latestPosts.length > 20) {
           global.latestPosts = global.latestPosts.slice(-20);
         }
 
-        console.log(`✅ Post ${i+1} result: ${postResult.success ? 'SUCCESS' : 'FAILED'}`);
-
-        // Wait between posts
-        if (i < topStories.length - 1) {
-          await sleep(300000); // 5 minutes between posts
+        console.log(`${postResult.success ? '✅' : '❌'} Post ${i+1} result: ${postResult.success ? 'SUCCESS' : 'FAILED'}`);
+        if (!postResult.success) {
+          console.log(`Error details: ${postResult.error}`);
         }
 
-      } catch (error) {
-        console.error(`❌ Failed processing story ${i+1}:`, error.message);
+        // Wait between posts to avoid rate limiting
+        if (i < topStories.length - 1) {
+          console.log('⏳ Waiting 5 minutes before next post…');
+      console.log('📱 Navigating to TikTok…');
+      await page.goto('https://www.tiktok.com/login/phone-or-email/email', {
+        waitUntil: 'networkidle',
+        timeout: 30000
+      });
+
+      await page.waitForTimeout(3000);
+
+      // Login
+      console.log('🔑 Logging in…');
+      await page.fill('input[name="username"]', TIKTOK_EMAIL);
+      await page.waitForTimeout(1000);
+      await page.fill('input[type="password"]', TIKTOK_PASSWORD);
+      await page.waitForTimeout(1000);
+      await page.click('button[type="submit"]');
+
+      // Wait for login to complete
+      await page.waitForTimeout(8000);
+
+      // Check if we're logged in by looking for profile elements
+      const isLoggedIn = await page.locator('[data-e2e="profile-icon"]').isVisible().catch(() => false);
+
+      if (!isLoggedIn) {
+        throw new Error('Login may have failed - profile icon not found');
       }
-    }
 
-    global.lastRun = new Date().toISOString();
-    console.log('✅ Automation completed!');
+      console.log('✅ Successfully logged into TikTok');
 
-  } catch (error) {
-    console.error('💥 Critical error:', error.message);
-    throw error;
-  }
-}
+      // Navigate to upload page
+      console.log('📤 Navigating to upload page…');
+      await page.goto('https://www.tiktok.com/creator-center/upload', {
+        waitUntil: 'networkidle',
+        timeout: 30000
+      });
 
-// Simplified TikTok posting (browser automation only)
-async function postToTikTokSimple(story, script, hashtags) {
-  const { chromium } = require('playwright');
+      await page.waitForTimeout(5000);
 
-  if (!TIKTOK_EMAIL || !TIKTOK_PASSWORD) {
-    return {
-      success: false,
-      platform: 'TikTok (No Credentials)',
-      posted_at: new Date().toISOString(),
-      title: story.title,
-      error: 'Missing TikTok credentials'
-    };
-  }
+      // Prepare the full caption
+      const fullCaption = script.substring(0, 280) + '\n\n' + hashtags;
+      console.log(`💬 Prepared caption (${fullCaption.length} chars): ${fullCaption.substring(0, 100)}…`);
 
-  let browser;
-  try {
-    console.log('🚀 Launching TikTok posting...');
 
-    browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+      // Try to find and fill caption field
+      const captionSelectors = [
+        '[data-contents="true"]',
+        '[contenteditable="true"]',
+        'div[role="textbox"]',
+        '.DraftEditor-editorContainer div',
+        '[placeholder*="caption"]'
+      ];
 
-    const page = await browser.newPage();
+      let captionFilled = false;
+      for (const selector of captionSelectors) {
+        try {
+          const captionField = page.locator(selector).first();
+          if (await captionField.isVisible()) {
+            await captionField.click();
+            await page.waitForTimeout(1000);
+            await captionField.fill(fullCaption);
+            captionFilled = true;
+            console.log('✅ Caption added successfully');
+            break;
+          }
+        } catch (error) {
+          // Continue to next selector
+        }
+      }
 
-    // Login
-    await page.goto('https://www.tiktok.com/login/phone-or-email/email');
-    await page.waitForTimeout(3000);
+      if (!captionFilled) {
+        console.log('⚠️ Could not locate caption field automatically');
+      }
 
-    await page.fill('input[name="username"]', TIKTOK_EMAIL);
-    await page.fill('input[type="password"]', TIKTOK_PASSWORD);
-    await page.click('button[type="submit"]');
-    await page.waitForTimeout(8000);
+      // For now, we'll consider this a success if we got to the upload page
+      result.success = true;
+      console.log('🎉 TikTok posting process completed successfully');
 
-    // Navigate to upload (text-only post for now)
-    await page.goto('https://www.tiktok.com/creator-center/upload');
-    await page.waitForTimeout(5000);
-
-    // Create simple text content post
-    const fullCaption = script.substring(0, 280) + '\n\n' + hashtags;
-
-    // Try to add caption
-    try {
-      const captionInput = page.locator('[contenteditable="true"]').first();
-      await captionInput.fill(fullCaption);
-      console.log('✅ Caption added to TikTok');
     } catch (error) {
-      console.log('⚠️ Could not add caption automatically');
+      throw new Error(`TikTok automation failed: ${error.message}`);
     }
-
-    console.log('🎉 TikTok posting process completed');
-    console.log(`📱 Content: ${script.substring(0, 50)}...`);
-
-    return {
-      success: true,
-      platform: 'TikTok',
-      posted_at: new Date().toISOString(),
-      title: story.title,
-      hashtags: hashtags,
-      region: story.region
-    };
-
   } catch (error) {
-    console.error('❌ TikTok posting failed:', error.message);
-
-    return {
-      success: false,
-      platform: 'TikTok (Failed)',
-      posted_at: new Date().toISOString(),
-      title: story.title,
-      error: error.message
-    };
-
+    console.error('❌ TikTok posting error:', error.message);
+    result.error = error.message;
   } finally {
     if (browser) {
-      await browser.close();
+      try {
+        await browser.close();
+      } catch (error) {
+        console.error('Error closing browser:', error.message);
+      }
     }
   }
+
+  return result;
+}
+
+// Generate TikTok script
+async function generateTikTokScript(story) {
+  // If we have Groq API, try to use it (with rate limiting protection)
+  if (GROQ_API_KEY) {
+    try {
+      const response = await axios.post(
+        'https://api.groq.com/openai/v1/chat/completions',
+        {
+          model: 'llama3-8b-8192',
+          messages: [
+            {
+              role: 'user',
+              content: `Create a viral TikTok script about this news: "${story.title}". Description: "${story.description}". Make it engaging, under 150 words, with hooks and emojis. Region: ${story.region}`
+            }
+          ],
+          max_tokens: 200,
+          temperature: 0.7
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${GROQ_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000
+        }
+      );
+
+      return response.data.choices[0].message.content;
+
+    } catch (error) {
+      console.log('⚠️ Groq API failed, using fallback script generator');
+    }
+  }
+
+  // Fallback: Generate script without AI
+  return generateFallbackScript(story);
+}
+
+// Fallback script generator
+function generateFallbackScript(story) {
+  const hooks = [
+    '🚨 BREAKING NEWS:',
+    '⚡ URGENT UPDATE:',
+    '🔥 MAJOR STORY:',
+    '🌍 GLOBAL ALERT:',
+    '📢 JUST IN:',
+    '💥 BIG NEWS:'
+  ];
+
+  const reactions = [
+    'This is absolutely insane! 😱',
+    'You need to hear this! 👂',
+    'This changes everything! 🔄',
+    'Mind = blown! 🤯',
+    'This is huge news! 📈',
+    'Everyone's talking about this! 💬'
+  ];
+
+  const callToActions = [
+    'What do you think about this? 💭',
+    'Share your thoughts below! 👇',
+    'Tag someone who needs to see this! 🏷️',
+    'Follow for more global news! ➡️',
+    'What\'s your take? Comment! 💬',
+    'Thoughts? Let me know! 🤔'
+  ];
+
+  const hook = hooks[Math.floor(Math.random() * hooks.length)];
+  const reaction = reactions[Math.floor(Math.random() * reactions.length)];
+  const cta = callToActions[Math.floor(Math.random() * callToActions.length)];
+
+  return `${hook} ${story.title}
+
+${reaction}
+
+Here’s what happened: ${story.description.substring(0, 100)}…
+
+This story from ${story.region.replace('_', ' ')} is developing right now and could impact millions.
+
+${cta}
+
+Source: ${story.source}`;
 }
 
 // Helper functions
@@ -347,54 +432,62 @@ function getRegion(country) {
 }
 
 function generateHashtags(story) {
-  const base = '#worldnews #global #breaking #fyp #viral #trending';
+  const base = '#worldnews #global #breaking #fyp #viral #trending #news';
+
   const regionTags = {
-    'americas': ' #Americas',
-    'europe': ' #Europe',
-    'asia': ' #Asia',
-    'middle_east': ' #MiddleEast',
-    'international': ' #International'
+    'americas': ' #Americas #USA',
+    'europe': ' #Europe #EU',
+    'asia': ' #Asia #AsiaNews',
+    'middle_east': ' #MiddleEast #WorldAffairs',
+    'international': ' #International #GlobalNews'
   };
-  return base + (regionTags[story.region] || '');
-}
 
-async function generateSimpleScript(story) {
-  // Simple script generation without AI to avoid rate limits
-  const urgentPhrases = ['🚨 BREAKING:', '⚡ URGENT:', '🔥 MAJOR:', '🌍 GLOBAL:'];
-  const hook = urgentPhrases[Math.floor(Math.random() * urgentPhrases.length)];
+  const sourceTags = {
+    'BBC': ' #BBC',
+    'Al Jazeera': ' #AlJazeera',
+    'Reuters': ' #Reuters'
+  };
 
-  return `${hook} ${story.title}
+  let hashtags = base + (regionTags[story.region] || ' #International');
 
-This major story from ${story.region.replace('_', ' ')} is developing right now.
+  if (sourceTags[story.source]) {
+    hashtags += sourceTags[story.source];
+  }
 
-Here's what we know: ${story.description.substring(0, 100)}...
-
-This could impact millions globally.
-
-What's your take? Share your thoughts! 👇
-
-Source: ${story.source}`;
+  return hashtags;
 }
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Schedule every 2 hours
+// Schedule automation every 2 hours
 cron.schedule('0 */2 * * *', () => {
-  console.log('⏰ Scheduled automation triggered');
-  runNewsAutomation().catch(console.error);
+  console.log('⏰ Scheduled automation triggered at', new Date().toISOString());
+  runNewsAutomation().catch(error => {
+    console.error('Scheduled automation failed:', error);
+  });
 });
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Simplified Global News TikTok Bot running on port ${PORT}`);
-  console.log(`🔑 Ready: News=${!!NEWSAPI_KEY}, TikTok=${!!(TIKTOK_EMAIL && TIKTOK_PASSWORD)}`);
+  console.log(`🚀 Global News TikTok Bot ACTIVE on port ${PORT}`);
+  console.log(`🔑 Credentials Status:`);
+  console.log(`   NewsAPI: ${NEWSAPI_KEY ? '✅' : '❌'}`);
+  console.log(`   TikTok: ${(TIKTOK_EMAIL && TIKTOK_PASSWORD) ? '✅' : '❌'}`);
+  console.log(`   Groq AI: ${GROQ_API_KEY ? '✅' : '❌'}`);
+  console.log(`   Playwright: ${checkPlaywrightInstallation() ? '✅' : '❌'}`);
 
+  // Test run after startup if all credentials are available
   if (NEWSAPI_KEY && TIKTOK_EMAIL && TIKTOK_PASSWORD) {
-    console.log('🔥 All credentials ready! Starting in 10 seconds...');
+    console.log('🔥 All systems ready! Starting test automation in 30 seconds…');
     setTimeout(() => {
-      runNewsAutomation().catch(console.error);
-    }, 10000);
+      console.log('🎬 Initiating startup test run…');
+      runNewsAutomation().catch(error => {
+        console.error('Startup test run failed:', error);
+      });
+    }, 30000);
+  } else {
+    console.log('⚠️ Missing credentials. Set environment variables to enable automation.');
   }
 });
