@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: global-news-tiktok-bot
+    env: node
+    plan: starter
+    buildCommand: npm install && npx playwright install --with-deps chromium
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+        value: "false"
+    healthCheckPath: /
+    autoDeploy: true
