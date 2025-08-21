@@ -13,7 +13,6 @@ RUN npm install --omit=dev
 # Install Playwright browsers and system dependencies
 RUN npx playwright install --with-deps chromium
 
-
 # Copy app source
 COPY . .
 
