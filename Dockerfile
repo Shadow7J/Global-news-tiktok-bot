@@ -1,19 +1,33 @@
-# Use Microsoft’s official Playwright image (includes Node + Chromium/Firefox/WebKit + deps)
-FROM mcr.microsoft.com/playwright:v1.46.0-jammy
+# Use Node 18 Alpine for smaller image
+FROM node:18-alpine
 
-# Set working directory
-WORKDIR /app
+# Install dependencies for Playwright
+RUN apk add --no-cache \
+  chromium \
+  nss \
+  freetype \
+  freetype-dev \
+  harfbuzz \
+  ca-certificates \
+  ttf-freefont
 
-# Copy package files first (for better caching)
+# Tell Playwright to use the installed Chromium
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/usr/bin
+
+# Create app directory
+WORKDIR /usr/src/app
+
+# Copy package files
 COPY package*.json ./
 
-# Install dependencies (skip browser download since already inside image)
-RUN npm install --legacy-peer-deps --ignore-scripts
+# Install dependencies
+RUN npm install --production
 
-# Copy the rest of your project
+# Copy app source
 COPY . .
 
-# Expose port if your app has a server (e.g., 3000)
+# Expose port
 EXPOSE 3000
 
 # Start the app
